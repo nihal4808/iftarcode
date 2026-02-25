@@ -17,12 +17,7 @@ interface VideoChatProps {
     participants: { id: string; name: string }[];
 }
 
-const ICE_SERVERS: RTCConfiguration = {
-    iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-    ],
-};
+// ICE Servers are now fetched dynamically inside the component
 
 const SIGNAL_POLL_INTERVAL = 1000; // 1 second
 
@@ -33,6 +28,12 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
     const [isCameraOff, setIsCameraOff] = useState(false);
     const [peers, setPeers] = useState<Map<string, PeerConnection>>(new Map());
     const [joining, setJoining] = useState(false);
+    const [iceServers, setIceServers] = useState<RTCConfiguration>({
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+        ]
+    });
 
     const peerId = useRef<string>(userName);
     const peersRef = useRef<Map<string, PeerConnection>>(new Map());
@@ -43,6 +44,24 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
     // Sync peersRef with state
     const updatePeers = useCallback(() => {
         setPeers(new Map(peersRef.current));
+    }, []);
+
+    // Fetch ICE servers on mount
+    useEffect(() => {
+        async function fetchIceServers() {
+            try {
+                const res = await fetch("/api/turn");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.iceServers) {
+                        setIceServers({ iceServers: data.iceServers });
+                    }
+                }
+            } catch {
+                console.error("Failed to fetch ICE servers");
+            }
+        }
+        fetchIceServers();
     }, []);
 
     // Send a signaling message
@@ -65,7 +84,7 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
 
     // Create an RTCPeerConnection for a remote peer
     const createPeerConnection = useCallback((remotePeerId: string, remotePeerName: string): RTCPeerConnection => {
-        const pc = new RTCPeerConnection(ICE_SERVERS);
+        const pc = new RTCPeerConnection(iceServers);
 
         // Add local tracks to the connection
         if (localStreamRef.current) {
