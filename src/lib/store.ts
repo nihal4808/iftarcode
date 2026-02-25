@@ -1,6 +1,3 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getDatabase, ref, set, get, child } from "firebase/database";
-
 export interface Room {
     id: string;
     code: string;
@@ -40,40 +37,46 @@ const ROOM_EXPIRY_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SIGNAL_EXPIRY_MS = 60 * 1000; // 60 seconds
 
 // ==========================================
-// FIREBASE CLIENT INITIALIZATION
+// FIREBASE REST API CONFIGURATION
 // ==========================================
-const firebaseConfig = {
-    apiKey: "AIzaSyAFZGq1B6oge9gIsQlsqApWzGjSLX8lr78",
-    authDomain: "iftarcode.firebaseapp.com",
-    projectId: "iftarcode",
-    storageBucket: "iftarcode.firebasestorage.app",
-    messagingSenderId: "46679653575",
-    appId: "1:46679653575:web:71b597a56af92d98cdd2e2"
-};
+const FIREBASE_DB_URL = "https://iftarcode-default-rtdb.firebaseio.com";
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getDatabase(app);
+async function firebaseGet<T>(path: string): Promise<T | null> {
+    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
+        cache: 'no-store'
+    });
+    if (!res.ok) return null;
+    return res.json();
+}
+
+async function firebaseSet(path: string, data: any): Promise<boolean> {
+    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+    });
+    return res.ok;
+}
 
 // ==========================================
-// ASYNC STORE OPERATIONS (Firebase Realtime DB)
+// ASYNC STORE OPERATIONS
 // ==========================================
 
 export async function createRoom(room: Room): Promise<Room> {
-    const roomRef = ref(db, `rooms/${room.code}`);
-    await set(roomRef, room);
+    await firebaseSet(`rooms/${room.code.toUpperCase()}`, room);
     return room;
 }
 
 export async function getRoom(code: string): Promise<Room | null> {
     const upperCode = code.toUpperCase();
-    const dbRef = ref(db);
-    const snapshot = await get(child(dbRef, `rooms/${upperCode}`));
+    const room = await firebaseGet<Room>(`rooms/${upperCode}`);
 
-    if (snapshot.exists()) {
-        const room = snapshot.val() as Room;
+    if (room) {
         // Lazy cleanup if expired
         if (Date.now() - room.createdAt > ROOM_EXPIRY_MS) {
-            await set(ref(db, `rooms/${upperCode}`), null);
+            await firebaseSet(`rooms/${upperCode}`, null);
             return null;
         }
         return room;
@@ -82,16 +85,14 @@ export async function getRoom(code: string): Promise<Room | null> {
 }
 
 export async function addParticipant(participant: Participant): Promise<Participant> {
-    const pRef = ref(db, `participants/${participant.roomId}/${participant.id}`);
-    await set(pRef, participant);
+    await firebaseSet(`participants/${participant.roomId}/${participant.id}`, participant);
     return participant;
 }
 
 export async function getParticipants(roomId: string): Promise<Participant[]> {
-    const dbRef = ref(db);
-    const snapshot = await get(child(dbRef, `participants/${roomId}`));
-    if (snapshot.exists()) {
-        return Object.values(snapshot.val()) as Participant[];
+    const participantsDict = await firebaseGet<Record<string, Participant>>(`participants/${roomId}`);
+    if (participantsDict) {
+        return Object.values(participantsDict);
     }
     return [];
 }
@@ -103,41 +104,35 @@ export async function isNameTaken(roomId: string, name: string): Promise<boolean
 
 export async function addMessage(message: Message): Promise<Message | null> {
     // Basic rate limit via standalone timestamp path (1 msg / sec)
-    const rateRef = ref(db, `rateLimits/${message.roomId}_${message.sender}`);
-    const rateSnapshot = await get(rateRef);
-    const lastTime = rateSnapshot.exists() ? rateSnapshot.val() : 0;
+    const ratePath = `rateLimits/${message.roomId}_${message.sender}`;
+    const lastTime = await firebaseGet<number>(ratePath) || 0;
 
     if (Date.now() - lastTime < 1000) return null; // blocked by rate limit
-    await set(rateRef, Date.now());
+    await firebaseSet(ratePath, Date.now());
 
-    const msgsRef = ref(db, `messages/${message.roomId}/${message.id}`);
-    await set(msgsRef, message);
+    await firebaseSet(`messages/${message.roomId}/${message.id}`, message);
     return message;
 }
 
 export async function getMessages(roomId: string): Promise<Message[]> {
-    const dbRef = ref(db);
-    const snapshot = await get(child(dbRef, `messages/${roomId}`));
-    if (snapshot.exists()) {
-        const msgs = Object.values(snapshot.val()) as Message[];
-        // Realtime DB objects are unordered loosely, sort by timestamp
+    const msgsDict = await firebaseGet<Record<string, Message>>(`messages/${roomId}`);
+    if (msgsDict) {
+        const msgs = Object.values(msgsDict);
         return msgs.sort((a, b) => a.timestamp - b.timestamp).slice(-100);
     }
     return [];
 }
 
 export async function addSignal(signal: SignalMessage): Promise<SignalMessage> {
-    const sigRef = ref(db, `signals/${signal.roomId}/${signal.id}`);
-    await set(sigRef, signal);
+    await firebaseSet(`signals/${signal.roomId}/${signal.id}`, signal);
     return signal;
 }
 
 export async function getSignals(roomId: string, targetPeerId: string, since: number): Promise<SignalMessage[]> {
-    const dbRef = ref(db);
-    const snapshot = await get(child(dbRef, `signals/${roomId}`));
+    const sigsDict = await firebaseGet<Record<string, SignalMessage>>(`signals/${roomId}`);
 
-    if (snapshot.exists()) {
-        const sigs = Object.values(snapshot.val()) as SignalMessage[];
+    if (sigsDict) {
+        const sigs = Object.values(sigsDict);
         const now = Date.now();
         // Filter messages exclusively for targetPeerId, created after `since`, and unexpired
         return sigs.filter(
