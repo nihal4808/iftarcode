@@ -1,0 +1,234 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.4);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.6);
+}
+
+/* Base styles */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #0f172a;
+  color: #e2e8f0;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+}
+
+.glass-light {
+  background: rgba(51, 65, 85, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(124, 58, 237, 0.1);
+}
+
+/* Animated gradient background */
+.gradient-bg {
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 25%, #0f172a 50%, #1a0533 75%, #0f172a 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Glow effects */
+.glow-purple {
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.3), 0 0 60px rgba(124, 58, 237, 0.1);
+}
+
+.glow-gold {
+  box-shadow: 0 0 20px rgba(250, 204, 21, 0.3), 0 0 60px rgba(250, 204, 21, 0.1);
+}
+
+.glow-text {
+  text-shadow: 0 0 20px rgba(124, 58, 237, 0.5), 0 0 40px rgba(124, 58, 237, 0.2);
+}
+
+.glow-gold-text {
+  text-shadow: 0 0 20px rgba(250, 204, 21, 0.5), 0 0 40px rgba(250, 204, 21, 0.2);
+}
+
+/* Float animation */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+
+  33% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+
+  66% {
+    transform: translateY(-5px) rotate(-1deg);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Pulse glow */
+@keyframes pulseGlow {
+
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+/* Shimmer effect */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Button hover glow */
+.btn-glow {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-glow::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #7c3aed, #facc15, #7c3aed);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+  filter: blur(8px);
+}
+
+.btn-glow:hover::before {
+  opacity: 0.6;
+}
+
+.btn-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.4);
+}
+
+/* Input focus styles */
+.input-glow:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.4), 0 0 20px rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+/* Chat message animation */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message-enter {
+  animation: slideInUp 0.3s ease-out;
+}
+
+/* Countdown ring */
+@keyframes countdown-pulse {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.5));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 20px rgba(124, 58, 237, 0.8));
+  }
+}
+
+.countdown-ring {
+  animation: countdown-pulse 2s ease-in-out infinite;
+}
+
+/* Celebration text */
+@keyframes celebrationPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 30px rgba(250, 204, 21, 0.5);
+  }
+
+  50% {
+    transform: scale(1.05);
+    text-shadow: 0 0 60px rgba(250, 204, 21, 0.8), 0 0 100px rgba(124, 58, 237, 0.4);
+  }
+}
+
+.animate-celebration {
+  animation: celebrationPulse 2s ease-in-out infinite;
+}
