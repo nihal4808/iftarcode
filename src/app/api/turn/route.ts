@@ -2,33 +2,25 @@ import { NextResponse } from "next/server";
 
 export async function GET() {
     try {
-        // Metered TURN Server credentials
-        const turnServer = {
-            urls: "turn:global.relay.metered.ca:80",
-            username: "18a1829fad648fa0a576a7a7",
-            credential: "HaZSE9Ihf0fxnzsX",
-        };
+        // Metered API Key provided by user
+        const API_KEY = "00467d2f20d374a0c34ecaca8b942fd60454";
+        const response = await fetch(`https://iftarcode.metered.live/api/v1/turn/credentials?apiKey=${API_KEY}`);
 
-        const turnServerTls = {
-            urls: "turn:global.relay.metered.ca:443",
-            username: "18a1829fad648fa0a576a7a7",
-            credential: "HaZSE9Ihf0fxnzsX",
-        };
+        if (!response.ok) {
+            throw new Error("Failed to fetch from Metered");
+        }
 
-        const turnServerUdp = {
-            urls: "turn:global.relay.metered.ca:443?transport=tcp",
-            username: "18a1829fad648fa0a576a7a7",
-            credential: "HaZSE9Ihf0fxnzsX",
-        };
+        const meteredIceServers = await response.json();
+
+        // Always include Google STUN as a fallback base
+        const baseIceServers = [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+        ];
 
         return NextResponse.json({
-            iceServers: [
-                { urls: "stun:stun.l.google.com:19302" },
-                { urls: "stun:stun1.l.google.com:19302" },
-                turnServer,
-                turnServerTls,
-                turnServerUdp,
-            ],
+            // Combine Google STUN with the fetched Metered TURN/STUN servers
+            iceServers: [...baseIceServers, ...meteredIceServers],
         });
     } catch {
         return NextResponse.json({ error: "Failed to fetch ICE servers" }, { status: 500 });
