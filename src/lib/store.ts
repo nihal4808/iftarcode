@@ -1,4 +1,5 @@
-import { Redis } from '@upstash/redis';
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getDatabase, ref, set, get, child } from "firebase/database";
 
 export interface Room {
     id: string;
@@ -12,7 +13,7 @@ export interface Room {
 
 export interface Participant {
     id: string;
-    roomId: string; // This is actually the room 'code' in many places, but we map it logically
+    roomId: string;
     name: string;
     joinedAt: number;
 }
@@ -27,7 +28,7 @@ export interface Message {
 
 export interface SignalMessage {
     id: string;
-    roomId: string;
+    roomId: string; // Used as the parent node
     from: string; // sender peerId
     to: string;   // target peerId
     type: "offer" | "answer" | "ice-candidate";
@@ -35,94 +36,64 @@ export interface SignalMessage {
     timestamp: number;
 }
 
-const ROOM_EXPIRY_SECONDS = 6 * 60 * 60; // 6 hours
-const SIGNAL_EXPIRY_SECONDS = 60; // 60 seconds
+const ROOM_EXPIRY_MS = 6 * 60 * 60 * 1000; // 6 hours
+const SIGNAL_EXPIRY_MS = 60 * 1000; // 60 seconds
 
 // ==========================================
-// REDIS CLIENT INITIALIZATION
+// FIREBASE CLIENT INITIALIZATION
 // ==========================================
-// Will be null if env vars are missing
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const firebaseConfig = {
+    apiKey: "AIzaSyAFZGq1B6oge9gIsQlsqApWzGjSLX8lr78",
+    authDomain: "iftarcode.firebaseapp.com",
+    projectId: "iftarcode",
+    storageBucket: "iftarcode.firebasestorage.app",
+    messagingSenderId: "46679653575",
+    appId: "1:46679653575:web:71b597a56af92d98cdd2e2"
+};
 
-const redis = (redisUrl && redisToken)
-    ? new Redis({ url: redisUrl, token: redisToken })
-    : null;
-
-// ==========================================
-// IN-MEMORY FALLBACK (For Local Dev without Redis)
-// ==========================================
-const memRooms = new Map<string, Room>();
-const memParticipants = new Map<string, Participant[]>();
-const memMessages = new Map<string, Message[]>();
-const memSignals = new Map<string, SignalMessage[]>();
-const memRateLimits = new Map<string, number>();
-
-function isMemoryRoomExpired(room: Room): boolean {
-    return Date.now() - room.createdAt > (ROOM_EXPIRY_SECONDS * 1000);
-}
-
-function cleanupMemoryRoom(code: string) {
-    const room = memRooms.get(code);
-    if (room) {
-        memParticipants.delete(room.id);
-        memMessages.delete(room.id);
-        memSignals.delete(room.id);
-        memRooms.delete(code);
-    }
-}
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const db = getDatabase(app);
 
 // ==========================================
-// ASYNC STORE OPERATIONS (Hybrid)
+// ASYNC STORE OPERATIONS (Firebase Realtime DB)
 // ==========================================
 
 export async function createRoom(room: Room): Promise<Room> {
-    if (redis) {
-        await redis.set(`room:${room.code}`, room, { ex: ROOM_EXPIRY_SECONDS });
-    } else {
-        memRooms.set(room.code, room);
-        memParticipants.set(room.id, []);
-        memMessages.set(room.id, []);
-    }
+    const roomRef = ref(db, `rooms/${room.code}`);
+    await set(roomRef, room);
     return room;
 }
 
 export async function getRoom(code: string): Promise<Room | null> {
     const upperCode = code.toUpperCase();
+    const dbRef = ref(db);
+    const snapshot = await get(child(dbRef, `rooms/${upperCode}`));
 
-    if (redis) {
-        const room = await redis.get<Room>(`room:${upperCode}`);
-        return room || null;
-    } else {
-        const room = memRooms.get(upperCode);
-        if (!room) return null;
-        if (isMemoryRoomExpired(room)) {
-            cleanupMemoryRoom(upperCode);
+    if (snapshot.exists()) {
+        const room = snapshot.val() as Room;
+        // Lazy cleanup if expired
+        if (Date.now() - room.createdAt > ROOM_EXPIRY_MS) {
+            await set(ref(db, `rooms/${upperCode}`), null);
             return null;
         }
         return room;
     }
+    return null;
 }
 
 export async function addParticipant(participant: Participant): Promise<Participant> {
-    if (redis) {
-        const key = `participants:${participant.roomId}`;
-        await redis.rpush(key, participant);
-        await redis.expire(key, ROOM_EXPIRY_SECONDS);
-    } else {
-        const pList = memParticipants.get(participant.roomId) || [];
-        pList.push(participant);
-        memParticipants.set(participant.roomId, pList);
-    }
+    const pRef = ref(db, `participants/${participant.roomId}/${participant.id}`);
+    await set(pRef, participant);
     return participant;
 }
 
 export async function getParticipants(roomId: string): Promise<Participant[]> {
-    if (redis) {
-        return await redis.lrange<Participant>(`participants:${roomId}`, 0, -1) || [];
-    } else {
-        return memParticipants.get(roomId) || [];
+    const dbRef = ref(db);
+    const snapshot = await get(child(dbRef, `participants/${roomId}`));
+    if (snapshot.exists()) {
+        return Object.values(snapshot.val()) as Participant[];
     }
+    return [];
 }
 
 export async function isNameTaken(roomId: string, name: string): Promise<boolean> {
@@ -131,81 +102,53 @@ export async function isNameTaken(roomId: string, name: string): Promise<boolean
 }
 
 export async function addMessage(message: Message): Promise<Message | null> {
-    if (redis) {
-        const rateKey = `rateLimit:${message.roomId}:${message.sender}`;
-        // Basic rate limit via Redis SET NX PX
-        const isLimited = await redis.set(rateKey, "1", { nx: true, px: 1000 });
-        if (!isLimited) return null; // blocked by rate limit
+    // Basic rate limit via standalone timestamp path (1 msg / sec)
+    const rateRef = ref(db, `rateLimits/${message.roomId}_${message.sender}`);
+    const rateSnapshot = await get(rateRef);
+    const lastTime = rateSnapshot.exists() ? rateSnapshot.val() : 0;
 
-        const msgKey = `messages:${message.roomId}`;
-        await redis.rpush(msgKey, message);
-        await redis.expire(msgKey, ROOM_EXPIRY_SECONDS);
+    if (Date.now() - lastTime < 1000) return null; // blocked by rate limit
+    await set(rateRef, Date.now());
 
-        // Keep only last 100 messages (optional trim)
-        // LTRIM keeps the elements in the range
-        await redis.ltrim(msgKey, -100, -1);
-    } else {
-        const key = `${message.roomId}:${message.sender}`;
-        const lastTime = memRateLimits.get(key) || 0;
-        if (Date.now() - lastTime < 1000) return null;
-        memRateLimits.set(key, Date.now());
-
-        const mList = memMessages.get(message.roomId) || [];
-        mList.push(message);
-        if (mList.length > 100) mList.splice(0, mList.length - 100);
-        memMessages.set(message.roomId, mList);
-    }
+    const msgsRef = ref(db, `messages/${message.roomId}/${message.id}`);
+    await set(msgsRef, message);
     return message;
 }
 
 export async function getMessages(roomId: string): Promise<Message[]> {
-    if (redis) {
-        return await redis.lrange<Message>(`messages:${roomId}`, 0, -1) || [];
-    } else {
-        return memMessages.get(roomId) || [];
+    const dbRef = ref(db);
+    const snapshot = await get(child(dbRef, `messages/${roomId}`));
+    if (snapshot.exists()) {
+        const msgs = Object.values(snapshot.val()) as Message[];
+        // Realtime DB objects are unordered loosely, sort by timestamp
+        return msgs.sort((a, b) => a.timestamp - b.timestamp).slice(-100);
     }
+    return [];
 }
 
 export async function addSignal(signal: SignalMessage): Promise<SignalMessage> {
-    if (redis) {
-        const sigKey = `signals:${signal.roomId}`;
-        await redis.rpush(sigKey, signal);
-        await redis.expire(sigKey, SIGNAL_EXPIRY_SECONDS);
-    } else {
-        const sList = memSignals.get(signal.roomId) || [];
-        sList.push(signal);
-
-        const now = Date.now();
-        const filtered = sList.filter(s => now - s.timestamp < SIGNAL_EXPIRY_SECONDS * 1000);
-        memSignals.set(signal.roomId, filtered);
-    }
+    const sigRef = ref(db, `signals/${signal.roomId}/${signal.id}`);
+    await set(sigRef, signal);
     return signal;
 }
 
 export async function getSignals(roomId: string, targetPeerId: string, since: number): Promise<SignalMessage[]> {
-    let signals: SignalMessage[] = [];
+    const dbRef = ref(db);
+    const snapshot = await get(child(dbRef, `signals/${roomId}`));
 
-    if (redis) {
-        signals = await redis.lrange<SignalMessage>(`signals:${roomId}`, 0, -1) || [];
-    } else {
-        signals = memSignals.get(roomId) || [];
+    if (snapshot.exists()) {
+        const sigs = Object.values(snapshot.val()) as SignalMessage[];
+        const now = Date.now();
+        // Filter messages exclusively for targetPeerId, created after `since`, and unexpired
+        return sigs.filter(
+            s => s.to === targetPeerId &&
+                s.timestamp > since &&
+                now - s.timestamp < SIGNAL_EXPIRY_MS
+        );
     }
-
-    const now = Date.now();
-    return signals.filter(
-        s => s.to === targetPeerId &&
-            s.timestamp > since &&
-            now - s.timestamp < SIGNAL_EXPIRY_SECONDS * 1000
-    );
+    return [];
 }
 
-// For local memory parity (to lazily clean up rooms if not using redis TTL)
 export function cleanupExpiredRooms() {
-    if (!redis) {
-        for (const [code, room] of memRooms.entries()) {
-            if (isMemoryRoomExpired(room)) {
-                cleanupMemoryRoom(code);
-            }
-        }
-    }
+    // No-op for Firebase. Firebase handles persistence logic; we lazy delete in `getRoom`
 }
