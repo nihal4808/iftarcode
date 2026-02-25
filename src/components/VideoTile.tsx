@@ -32,8 +32,10 @@ export default function VideoTile({
     useEffect(() => {
         if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
+            videoRef.current.muted = isLocal;
+            videoRef.current.volume = 1;
         }
-    }, [stream]);
+    }, [stream, isLocal]);
 
     const hasVideo = stream && stream.getVideoTracks().length > 0 && !isCameraOff;
 

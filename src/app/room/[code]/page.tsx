@@ -98,6 +98,24 @@ export default function RoomPage() {
         }
     };
 
+    const copyInviteLink = async () => {
+        const inviteUrl = window.location.href;
+        try {
+            await navigator.clipboard.writeText(inviteUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            const textArea = document.createElement("textarea");
+            textArea.value = inviteUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textArea);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
     const handleCountdownComplete = useCallback(() => {
         setShowCelebration(true);
     }, []);
@@ -274,10 +292,10 @@ export default function RoomPage() {
                             {/* Share section */}
                             <div className="glass rounded-2xl p-4">
                                 <h4 className="text-sm font-semibold text-white mb-2">Invite Friends</h4>
-                                <p className="text-xs text-slate-500 mb-2">
-                                    Share this code to invite others
+                                <p className="text-xs text-slate-500 mb-3">
+                                    Share this code or link to invite others
                                 </p>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 mb-3">
                                     <div className="flex-1 bg-navy/60 rounded-xl px-3 py-2 font-mono text-sm text-center text-gold tracking-[0.3em] border border-gold/10">
                                         {code}
                                     </div>
@@ -292,6 +310,17 @@ export default function RoomPage() {
                                         </svg>
                                     </motion.button>
                                 </div>
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={copyInviteLink}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-accent to-purple-dark text-white text-sm font-medium rounded-xl cursor-pointer shadow-lg shadow-purple-accent/20"
+                                >
+                                    <svg className="w-4 h-4 text-purple-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                                    </svg>
+                                    {copied ? "Copied to clipboard!" : "Copy Invite Link"}
+                                </motion.button>
                             </div>
                         </div>
                     </motion.div>

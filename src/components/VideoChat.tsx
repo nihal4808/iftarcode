@@ -208,6 +208,7 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
             localStreamRef.current = stream;
             setLocalStream(stream);
             setInCall(true);
+            setJoining(false);
             lastSignalTime.current = Date.now() - 5000; // Get signals from last 5 seconds
 
             // Start polling for signals
@@ -258,6 +259,7 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
         }
 
         setInCall(false);
+        setJoining(false);
         setIsMuted(false);
         setIsCameraOff(false);
     }, [updatePeers]);
