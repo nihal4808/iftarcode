@@ -11,12 +11,12 @@ export async function GET(
         // Lazy cleanup
         cleanupExpiredRooms();
 
-        const room = getRoom(code.toUpperCase());
+        const room = await getRoom(code.toUpperCase());
         if (!room) {
             return NextResponse.json({ error: "Room not found or expired" }, { status: 404 });
         }
 
-        const participantList = getParticipants(room.id);
+        const participantList = await getParticipants(room.id);
 
         return NextResponse.json({
             room: {

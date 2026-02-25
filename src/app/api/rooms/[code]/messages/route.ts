@@ -8,12 +8,12 @@ export async function GET(
 ) {
     try {
         const code = params.code;
-        const room = getRoom(code.toUpperCase());
+        const room = await getRoom(code.toUpperCase());
         if (!room) {
             return NextResponse.json({ error: "Room not found" }, { status: 404 });
         }
 
-        const msgs = getMessages(room.id);
+        const msgs = await getMessages(room.id);
         return NextResponse.json({
             messages: msgs.map((m) => ({
                 id: m.id,
@@ -43,12 +43,12 @@ export async function POST(
             return NextResponse.json({ error: "Invalid message length" }, { status: 400 });
         }
 
-        const room = getRoom(code.toUpperCase());
+        const room = await getRoom(code.toUpperCase());
         if (!room) {
             return NextResponse.json({ error: "Room not found" }, { status: 404 });
         }
 
-        const message = addMessage({
+        const message = await addMessage({
             id: uuidv4(),
             roomId: room.id,
             sender: sender.trim(),

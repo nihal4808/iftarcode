@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
         // Generate unique code (retry if collision)
         let code = generateRoomCode();
         let attempts = 0;
-        while (getRoom(code) && attempts < 10) {
+        while ((await getRoom(code)) && attempts < 10) {
             code = generateRoomCode();
             attempts++;
         }
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         }
 
         const roomId = uuidv4();
-        const room = createRoom({
+        const room = await createRoom({
             id: roomId,
             code,
             hostName: hostName.trim(),
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Add host as first participant
-        addParticipant({
+        await addParticipant({
             id: uuidv4(),
             roomId: room.id,
             name: hostName.trim(),

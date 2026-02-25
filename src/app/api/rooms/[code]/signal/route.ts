@@ -19,12 +19,12 @@ export async function POST(
             return NextResponse.json({ error: "Invalid signal type" }, { status: 400 });
         }
 
-        const room = getRoom(code.toUpperCase());
+        const room = await getRoom(code.toUpperCase());
         if (!room) {
             return NextResponse.json({ error: "Room not found" }, { status: 404 });
         }
 
-        const signal = addSignal({
+        const signal = await addSignal({
             id: uuidv4(),
             roomId: room.id,
             from,
@@ -55,12 +55,12 @@ export async function GET(
             return NextResponse.json({ error: "peerId is required" }, { status: 400 });
         }
 
-        const room = getRoom(code.toUpperCase());
+        const room = await getRoom(code.toUpperCase());
         if (!room) {
             return NextResponse.json({ error: "Room not found" }, { status: 404 });
         }
 
-        const pendingSignals = getSignals(room.id, peerId, since);
+        const pendingSignals = await getSignals(room.id, peerId, since);
 
         return NextResponse.json({
             signals: pendingSignals.map(s => ({

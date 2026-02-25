@@ -14,27 +14,27 @@ export async function POST(
             return NextResponse.json({ error: "Name is required" }, { status: 400 });
         }
 
-        const room = getRoom(code.toUpperCase());
+        const room = await getRoom(code.toUpperCase());
         if (!room) {
             return NextResponse.json({ error: "Room not found or expired" }, { status: 404 });
         }
 
         // Check for duplicate names
-        if (isNameTaken(room.id, name.trim())) {
+        if (await isNameTaken(room.id, name.trim())) {
             return NextResponse.json(
                 { error: "This name is already taken in this room" },
                 { status: 409 }
             );
         }
 
-        const participant = addParticipant({
+        const participant = await addParticipant({
             id: uuidv4(),
             roomId: room.id,
             name: name.trim(),
             joinedAt: Date.now(),
         });
 
-        const participantList = getParticipants(room.id);
+        const participantList = await getParticipants(room.id);
 
         return NextResponse.json({
             participant: {
