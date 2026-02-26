@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import CrescentMoon from "@/components/CrescentMoon";
 import RamadanChandelier from "@/components/RamadanChandelier";
+import KeralaSilhouettes from "@/components/KeralaSilhouettes";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -32,38 +33,41 @@ export default function LandingPage() {
 
   return (
     <div className="gradient-bg min-h-screen flex flex-col items-center justify-center relative overflow-hidden px-4">
-      {/* Decorative Chandeliers */}
+      {/* Decorative Background Elements */}
+      <KeralaSilhouettes />
       <RamadanChandelier side="left" />
       <RamadanChandelier side="right" />
 
-      {/* Floating background particles */}
-      {Array.from({ length: 20 }).map((_, i) => (
+      {/* Minnaminungi (Fireflies) */}
+      {Array.from({ length: 35 }).map((_, i) => (
         <motion.div
           key={i}
-          className="absolute rounded-full"
+          className="absolute rounded-full blur-[1px]"
           style={{
-            width: Math.random() * 3 + 1,
-            height: Math.random() * 3 + 1,
-            background: i % 3 === 0 ? "rgba(250,204,21,0.3)" : "rgba(124,58,237,0.2)",
+            width: Math.random() * 4 + 2,
+            height: Math.random() * 4 + 2,
+            background: `rgba(245, 158, 11, ${Math.random() * 0.6 + 0.2})`, // Amber/Gold glow
             left: `${Math.random() * 100}%`,
             top: `${Math.random() * 100}%`,
           }}
           animate={{
-            y: [0, -30, 0],
-            opacity: [0.2, 0.8, 0.2],
+            y: [0, -Math.random() * 50 - 20, Math.random() * 20],
+            x: [0, Math.random() * 30 - 15, Math.random() * 30 - 15],
+            opacity: [0, 0.8, 0],
+            scale: [0.8, 1.2, 0.8]
           }}
           transition={{
-            duration: 3 + Math.random() * 4,
+            duration: 4 + Math.random() * 5,
             repeat: Infinity,
-            delay: Math.random() * 3,
+            delay: Math.random() * 5,
             ease: "easeInOut",
           }}
         />
       ))}
 
       {/* Background glow orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-accent/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-gold/5 rounded-full blur-3xl" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-accent/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-gold/5 rounded-full blur-3xl pointer-events-none" />
 
       <motion.div
         variants={containerVariants}
