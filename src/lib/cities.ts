@@ -5,6 +5,23 @@ export interface City {
 }
 
 export const cities: City[] = [
+    // Kerala Districts (Prioritized)
+    { name: "Kozhikode", country: "India", countryCode: "IN" },
+    { name: "Malappuram", country: "India", countryCode: "IN" },
+    { name: "Ernakulam", country: "India", countryCode: "IN" },
+    { name: "Kannur", country: "India", countryCode: "IN" },
+    { name: "Kasaragod", country: "India", countryCode: "IN" },
+    { name: "Wayanad", country: "India", countryCode: "IN" },
+    { name: "Palakkad", country: "India", countryCode: "IN" },
+    { name: "Thrissur", country: "India", countryCode: "IN" },
+    { name: "Thiruvananthapuram", country: "India", countryCode: "IN" },
+    { name: "Kollam", country: "India", countryCode: "IN" },
+    { name: "Alappuzha", country: "India", countryCode: "IN" },
+    { name: "Kottayam", country: "India", countryCode: "IN" },
+    { name: "Pathanamthitta", country: "India", countryCode: "IN" },
+    { name: "Idukki", country: "India", countryCode: "IN" },
+
+    // Middle East & Global
     { name: "Mecca", country: "Saudi Arabia", countryCode: "SA" },
     { name: "Medina", country: "Saudi Arabia", countryCode: "SA" },
     { name: "Riyadh", country: "Saudi Arabia", countryCode: "SA" },

@@ -22,8 +22,8 @@ const itemVariants = {
 export default function CreateRoomPage() {
     const router = useRouter();
     const [hostName, setHostName] = useState("");
-    const [city, setCity] = useState("");
-    const [searchQuery, setSearchQuery] = useState("");
+    const [city, setCity] = useState("Kozhikode"); // Default to a prominent Kerala city
+    const [searchQuery, setSearchQuery] = useState("Kozhikode");
     const [showDropdown, setShowDropdown] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
