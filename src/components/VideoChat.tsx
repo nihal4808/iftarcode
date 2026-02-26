@@ -3,11 +3,12 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import VideoTile from "./VideoTile";
+import { io, Socket } from "socket.io-client";
+import * as mediasoupClient from "mediasoup-client";
 
 interface PeerConnection {
     peerId: string;
     peerName: string;
-    connection: RTCPeerConnection;
     stream: MediaStream | null;
 }
 
@@ -17,186 +18,186 @@ interface VideoChatProps {
     participants: { id: string; name: string }[];
 }
 
-// ICE Servers are now fetched dynamically inside the component
-
-const SIGNAL_POLL_INTERVAL = 1000; // 1 second
-
-export default function VideoChat({ roomCode, userName, participants }: VideoChatProps) {
+export default function VideoChat({ roomCode, userName }: VideoChatProps) {
     const [inCall, setInCall] = useState(false);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [isMuted, setIsMuted] = useState(false);
     const [isCameraOff, setIsCameraOff] = useState(false);
     const [peers, setPeers] = useState<Map<string, PeerConnection>>(new Map());
     const [joining, setJoining] = useState(false);
-    const [iceServers, setIceServers] = useState<RTCConfiguration>({
-        iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-        ]
-    });
 
-    const peerId = useRef<string>(userName);
+    const socketRef = useRef<Socket | null>(null);
+    const deviceRef = useRef<mediasoupClient.Device | null>(null);
+    const sendTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
+    const recvTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
+
+    const consumersRef = useRef<Map<string, mediasoupClient.types.Consumer>>(new Map());
+    const producersRef = useRef<Map<string, mediasoupClient.types.Producer>>(new Map());
     const peersRef = useRef<Map<string, PeerConnection>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
-    const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const lastSignalTime = useRef<number>(Date.now() - 10000);
 
-    // Sync peersRef with state
-    const updatePeers = useCallback(() => {
+    const updatePeersState = useCallback(() => {
         setPeers(new Map(peersRef.current));
     }, []);
 
-    // Fetch ICE servers on mount
-    useEffect(() => {
-        async function fetchIceServers() {
-            try {
-                const res = await fetch("/api/turn");
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.iceServers) {
-                        setIceServers({ iceServers: data.iceServers });
-                    }
-                }
-            } catch {
-                console.error("Failed to fetch ICE servers");
-            }
+    const ensureRemoteStream = useCallback((peerId: string, peerName: string) => {
+        let peer = peersRef.current.get(peerId);
+        if (!peer) {
+            peer = { peerId, peerName, stream: new MediaStream() };
+            peersRef.current.set(peerId, peer);
         }
-        fetchIceServers();
+        return peer.stream!;
     }, []);
 
-    // Send a signaling message
-    const sendSignal = useCallback(async (to: string, type: string, data: string) => {
-        try {
-            await fetch(`/api/rooms/${roomCode}/signal`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    from: peerId.current,
-                    to,
-                    type,
-                    data,
-                }),
+    const consume = useCallback(async (
+        producerId: string,
+        peerId: string,
+        peerName: string,
+        kind: string
+    ) => {
+        if (!deviceRef.current || !recvTransportRef.current || !socketRef.current) return;
+
+        const rtpCapabilities = deviceRef.current.rtpCapabilities;
+        const result = await new Promise<any>((resolve, reject) => {
+            socketRef.current!.emit('consume', {
+                rtpCapabilities,
+                remoteProducerId: producerId,
+                serverConsumerTransportId: recvTransportRef.current!.id
+            }, (res: any) => {
+                if (res.error) reject(new Error(res.error));
+                else resolve(res);
             });
-        } catch {
-            // Silent fail
-        }
-    }, [roomCode]);
-
-    // Create an RTCPeerConnection for a remote peer
-    const createPeerConnection = useCallback((remotePeerId: string, remotePeerName: string): RTCPeerConnection => {
-        const pc = new RTCPeerConnection(iceServers);
-
-        // Add local tracks to the connection
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => {
-                pc.addTrack(track, localStreamRef.current!);
-            });
-        }
-
-        // Handle incoming tracks from remote peer
-        const remoteStream = new MediaStream();
-        pc.ontrack = (event) => {
-            event.streams[0].getTracks().forEach(track => {
-                remoteStream.addTrack(track);
-            });
-            const peerConn = peersRef.current.get(remotePeerId);
-            if (peerConn) {
-                peerConn.stream = remoteStream;
-                updatePeers();
-            }
-        };
-
-        // Handle ICE candidates
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                sendSignal(remotePeerId, "ice-candidate", JSON.stringify(event.candidate));
-            }
-        };
-
-        // Store the peer connection
-        peersRef.current.set(remotePeerId, {
-            peerId: remotePeerId,
-            peerName: remotePeerName,
-            connection: pc,
-            stream: remoteStream,
         });
-        updatePeers();
 
-        return pc;
-    }, [sendSignal, updatePeers]);
+        const { id, kind: consumerKind, rtpParameters } = result.params;
+        const consumer = await recvTransportRef.current.consume({
+            id,
+            producerId,
+            kind: consumerKind,
+            rtpParameters
+        });
 
-    // Handle incoming signaling messages
-    const handleSignal = useCallback(async (signal: { from: string; type: string; data: string }) => {
-        const { from, type, data } = signal;
+        consumersRef.current.set(consumer.id, consumer);
 
-        // Skip our own messages
-        if (from === peerId.current) return;
+        const stream = ensureRemoteStream(peerId, peerName);
+        stream.addTrack(consumer.track);
+        updatePeersState();
 
-        const remoteName = from;
+        // Resume consumer server-side
+        socketRef.current.emit('resumeConsumer', { consumerId: consumer.id }, () => { });
+    }, [ensureRemoteStream, updatePeersState]);
 
-        try {
-            if (type === "offer") {
-                // Someone is calling us
-                let pc = peersRef.current.get(from)?.connection;
-                if (pc) {
-                    // They rejoined, close old connection
-                    pc.close();
-                    peersRef.current.delete(from);
-                }
-                pc = createPeerConnection(from, remoteName);
+    const initSocketsAndMediasoup = useCallback(async (stream: MediaStream) => {
+        return new Promise<void>((resolve, reject) => {
+            // Using a hardcoded URL for the dev SFU server, should be env var in production
+            const SFU_URL = process.env.NEXT_PUBLIC_SFU_URL || "http://localhost:4000";
+            const socket = io(SFU_URL);
+            socketRef.current = socket;
 
-                await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                sendSignal(from, "answer", JSON.stringify(answer));
-
-            } else if (type === "answer") {
-                // We received an answer
-                const pc = peersRef.current.get(from)?.connection;
-                if (pc && pc.signalingState !== "stable") {
-                    await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)));
-                }
-
-            } else if (type === "ice-candidate") {
-                // We received an ICE candidate
-                const pc = peersRef.current.get(from)?.connection;
-                if (pc) {
-                    await pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data)));
-                }
-            }
-        } catch (err) {
-            console.error(`Error processing ${type} from ${from}:`, err);
-        }
-    }, [createPeerConnection, sendSignal]);
-
-    // Poll for signaling messages
-    const pollSignals = useCallback(async () => {
-        try {
-            const res = await fetch(
-                `/api/rooms/${roomCode}/signal?peerId=${encodeURIComponent(peerId.current)}&since=${lastSignalTime.current}`
-            );
-            if (!res.ok) return;
-
-            const data = await res.json();
-            if (data.signals && data.signals.length > 0) {
-                let maxTime = lastSignalTime.current;
-
-                for (const signal of data.signals) {
-                    if (signal.timestamp > maxTime) {
-                        maxTime = signal.timestamp;
+            socket.on("connect", () => {
+                socket.emit("joinRoom", { roomId: roomCode, userName }, async (res: any) => {
+                    if (res.error) {
+                        return reject(new Error(res.error));
                     }
-                    await handleSignal(signal);
+                    try {
+                        // 1. Initialize device
+                        const device = new mediasoupClient.Device();
+                        deviceRef.current = device;
+                        await device.load({ routerRtpCapabilities: res.rtpCapabilities });
+
+                        // 2. Create send transport
+                        const sendTransportInfo = await new Promise<any>((resData, rej) => {
+                            socket.emit("createWebRtcTransport", { sender: true }, (data: any) => {
+                                if (data.error) rej(new Error(data.error));
+                                else resData(data.params);
+                            });
+                        });
+                        const sendTransport = device.createSendTransport(sendTransportInfo);
+                        sendTransportRef.current = sendTransport;
+
+                        sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
+                            socket.emit("connectTransport", { transportId: sendTransport.id, dtlsParameters }, (resp: any) => {
+                                if (resp.error) errback(new Error(resp.error));
+                                else callback();
+                            });
+                        });
+
+                        sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
+                            socket.emit("produce", { transportId: sendTransport.id, kind, rtpParameters, appData }, (resp: any) => {
+                                if (resp.error) errback(new Error(resp.error));
+                                else callback({ id: resp.id });
+                            });
+                        });
+
+                        // 3. Create receive transport
+                        const recvTransportInfo = await new Promise<any>((resData, rej) => {
+                            socket.emit("createWebRtcTransport", { sender: false }, (data: any) => {
+                                if (data.error) rej(new Error(data.error));
+                                else resData(data.params);
+                            });
+                        });
+                        const recvTransport = device.createRecvTransport(recvTransportInfo);
+                        recvTransportRef.current = recvTransport;
+
+                        recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
+                            socket.emit("connectTransport", { transportId: recvTransport.id, dtlsParameters }, (resp: any) => {
+                                if (resp.error) errback(new Error(resp.error));
+                                else callback();
+                            });
+                        });
+
+                        // 4. Produce local tracks
+                        const videoTrack = stream.getVideoTracks()[0];
+                        if (videoTrack) {
+                            const producer = await sendTransport.produce({ track: videoTrack, encodings: [{ maxBitrate: 500000 }] });
+                            producersRef.current.set(producer.id, producer);
+                        }
+                        const audioTrack = stream.getAudioTracks()[0];
+                        if (audioTrack) {
+                            const producer = await sendTransport.produce({ track: audioTrack });
+                            producersRef.current.set(producer.id, producer);
+                        }
+
+                        // 5. Consume existing producers
+                        socket.emit("getProducers", {}, (producers: any[]) => {
+                            for (const p of producers) {
+                                consume(p.producerId, p.peerId, p.peerName, p.kind);
+                            }
+                        });
+
+                        resolve();
+
+                    } catch (err) {
+                        console.error("Mediasoup initialization failed:", err);
+                        reject(err);
+                    }
+                });
+            });
+
+            socket.on("newProducer", ({ producerId, peerId, peerName, kind }) => {
+                consume(producerId, peerId, peerName, kind);
+            });
+
+            socket.on("peerLeft", ({ peerId }) => {
+                peersRef.current.delete(peerId);
+                updatePeersState();
+            });
+
+            socket.on("consumerClosed", ({ consumerId }) => {
+                const consumer = consumersRef.current.get(consumerId);
+                if (consumer) {
+                    consumer.close();
+                    consumersRef.current.delete(consumerId);
                 }
+            });
 
-                // Update time even if handleSignal fails to prevent infinite loop
-                lastSignalTime.current = maxTime;
-            }
-        } catch {
-            // Silent fail on poll
-        }
-    }, [roomCode, handleSignal]);
+            socket.on("connect_error", (err) => {
+                console.error("Socket connect error:", err);
+                reject(err);
+            });
+        });
+    }, [roomCode, userName, consume, updatePeersState]);
 
-    // Join call - get media and start connecting to peers
     const joinCall = useCallback(async () => {
         setJoining(true);
         try {
@@ -207,51 +208,42 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
 
             localStreamRef.current = stream;
             setLocalStream(stream);
+
+            await initSocketsAndMediasoup(stream);
+
             setInCall(true);
             setJoining(false);
-            lastSignalTime.current = Date.now() - 5000; // Get signals from last 5 seconds
-
-            // Start polling for signals
-            pollTimerRef.current = setInterval(pollSignals, SIGNAL_POLL_INTERVAL);
-
-            // Wait a moment for local setup, then call other participants
-            setTimeout(async () => {
-                for (const p of participants) {
-                    if (p.name === userName) continue; // Don't call ourselves
-
-                    try {
-                        const pc = createPeerConnection(p.name, p.name);
-                        const offer = await pc.createOffer();
-                        await pc.setLocalDescription(offer);
-                        sendSignal(p.name, "offer", JSON.stringify(offer));
-                    } catch (err) {
-                        console.error("Error creating offer for", p.name, err);
-                    }
-                }
-            }, 1000);
-
         } catch (err) {
-            console.error("Failed to access camera/mic:", err);
+            console.error("Failed to access camera/mic or connect to SFU:", err);
             setJoining(false);
         }
-    }, [participants, userName, createPeerConnection, sendSignal, pollSignals]);
+    }, [initSocketsAndMediasoup]);
 
-    // Leave call
     const leaveCall = useCallback(() => {
-        // Stop polling
-        if (pollTimerRef.current) {
-            clearInterval(pollTimerRef.current);
-            pollTimerRef.current = null;
+        if (socketRef.current) {
+            socketRef.current.emit("leaveRoom");
+            socketRef.current.disconnect();
+            socketRef.current = null;
         }
 
-        // Close all peer connections
-        peersRef.current.forEach(peer => {
-            peer.connection.close();
-        });
-        peersRef.current.clear();
-        updatePeers();
+        if (sendTransportRef.current) {
+            sendTransportRef.current.close();
+            sendTransportRef.current = null;
+        }
+        if (recvTransportRef.current) {
+            recvTransportRef.current.close();
+            recvTransportRef.current = null;
+        }
+        deviceRef.current = null;
 
-        // Stop local stream
+        consumersRef.current.forEach(c => c.close());
+        consumersRef.current.clear();
+        producersRef.current.forEach(p => p.close());
+        producersRef.current.clear();
+
+        peersRef.current.clear();
+        updatePeersState();
+
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(track => track.stop());
             localStreamRef.current = null;
@@ -262,9 +254,8 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
         setJoining(false);
         setIsMuted(false);
         setIsCameraOff(false);
-    }, [updatePeers]);
+    }, [updatePeersState]);
 
-    // Toggle microphone
     const toggleMic = useCallback(() => {
         if (localStreamRef.current) {
             localStreamRef.current.getAudioTracks().forEach(track => {
@@ -274,7 +265,6 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
         }
     }, []);
 
-    // Toggle camera
     const toggleCamera = useCallback(() => {
         if (localStreamRef.current) {
             localStreamRef.current.getVideoTracks().forEach(track => {
@@ -284,23 +274,17 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
         }
     }, []);
 
-    // Cleanup on unmount
     useEffect(() => {
-        const currentPeers = peersRef.current;
-        const currentStream = localStreamRef.current;
-        const currentPollTimer = pollTimerRef.current;
         return () => {
-            if (currentPollTimer) {
-                clearInterval(currentPollTimer);
+            if (socketRef.current) {
+                socketRef.current.disconnect();
             }
-            currentPeers.forEach(peer => peer.connection.close());
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop());
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
             }
         };
     }, []);
 
-    // Not in call - show join button
     if (!inCall) {
         return (
             <motion.div
@@ -316,7 +300,7 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
                     </div>
                     <div>
                         <h3 className="text-white font-semibold text-lg">Video & Audio Call</h3>
-                        <p className="text-slate-500 text-sm mt-1">Join the call to chat face-to-face</p>
+                        <p className="text-slate-500 text-sm mt-1">Join the call to chat face-to-face via SFU</p>
                     </div>
                     <motion.button
                         whileHover={{ scale: 1.03 }}
@@ -345,11 +329,9 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
         );
     }
 
-    // In call - show video grid + controls
     const peerList = Array.from(peers.values());
-    const totalParticipants = peerList.length + 1; // +1 for local
+    const totalParticipants = peerList.length + 1;
 
-    // Determine grid layout dynamically based on Google Meet logic
     let gridClass = "grid-cols-1";
     if (totalParticipants === 2) gridClass = "md:grid-cols-2";
     else if (totalParticipants === 3 || totalParticipants === 4) gridClass = "grid-cols-2";
@@ -360,13 +342,11 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
         <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-col h-[500px] md:h-[650px] space-y-4"
+            className="flex flex-col h-[600px] md:h-[750px] space-y-4"
         >
-            {/* Video Grid Area */}
-            <div className="flex-1 w-full bg-navy-dark/40 rounded-3xl p-3 md:p-4 overflow-hidden shadow-inner border border-white/5">
-                <div className={`grid ${gridClass} gap-3 md:gap-4 h-full w-full auto-rows-fr`}>
-                    {/* Local video */}
-                    <div className="relative w-full h-full min-h-[150px] flex items-center justify-center">
+            <div className="flex-1 w-full bg-navy-dark/40 rounded-3xl p-3 md:p-4 overflow-y-auto shadow-inner border border-white/5 custom-scrollbar">
+                <div className={`grid ${gridClass} gap-3 md:gap-4 w-full auto-rows-max`}>
+                    <div className="relative w-full aspect-video min-h-[150px] flex items-center justify-center">
                         <VideoTile
                             stream={localStream}
                             name={userName}
@@ -376,7 +356,6 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
                         />
                     </div>
 
-                    {/* Remote videos */}
                     <AnimatePresence>
                         {peerList.map((peer) => (
                             <motion.div
@@ -384,12 +363,12 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.8 }}
-                                className="relative w-full h-full min-h-[150px] flex items-center justify-center"
+                                className="relative w-full aspect-video min-h-[150px] flex items-center justify-center"
                             >
                                 <VideoTile
                                     stream={peer.stream}
                                     name={peer.peerName}
-                                    isMuted={false} // Would need remote mute state tracking for fully accurate indicator
+                                    isMuted={false}
                                     isCameraOff={!peer.stream || peer.stream.getVideoTracks().length === 0}
                                 />
                             </motion.div>
@@ -398,9 +377,7 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
                 </div>
             </div>
 
-            {/* Controls Bar */}
             <div className="glass rounded-2xl px-6 py-3 flex items-center justify-center gap-4">
-                {/* Mic toggle */}
                 <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
@@ -423,7 +400,6 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
                     )}
                 </motion.button>
 
-                {/* Camera toggle */}
                 <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
@@ -446,10 +422,8 @@ export default function VideoChat({ roomCode, userName, participants }: VideoCha
                     )}
                 </motion.button>
 
-                {/* Divider */}
                 <div className="w-px h-8 bg-white/10" />
 
-                {/* Leave call */}
                 <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
