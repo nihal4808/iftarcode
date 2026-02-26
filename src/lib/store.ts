@@ -40,24 +40,44 @@ const SIGNAL_EXPIRY_MS = 60 * 1000; // 60 seconds
 // FIREBASE REST API CONFIGURATION
 // ==========================================
 const FIREBASE_DB_URL = "https://iftarcode-default-rtdb.firebaseio.com";
+// Firebase Web API Key
+const FIREBASE_API_KEY = "AIzaSyAFZGq1B6oge9gIsQlsqApWzGjSLX8lr78";
 
 async function firebaseGet<T>(path: string): Promise<T | null> {
-    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
-        cache: 'no-store'
-    });
-    if (!res.ok) return null;
-    return res.json();
+    try {
+        const res = await fetch(`${FIREBASE_DB_URL}/${path}.json?key=${FIREBASE_API_KEY}`, {
+            cache: 'no-store'
+        });
+        if (!res.ok) {
+            console.error(`Firebase GET Error: ${res.status} ${res.statusText}`);
+            return null;
+        }
+        return res.json();
+    } catch (e) {
+        console.error(`Firebase GET Exception:`, e);
+        return null;
+    }
 }
 
 async function firebaseSet(path: string, data: any): Promise<boolean> {
-    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-    });
-    return res.ok;
+    try {
+        const res = await fetch(`${FIREBASE_DB_URL}/${path}.json?key=${FIREBASE_API_KEY}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+        if (!res.ok) {
+            console.error(`Firebase SET Error: ${res.status} ${res.statusText}`);
+            const text = await res.text();
+            console.error(`Firebase SET Error Body:`, text);
+        }
+        return res.ok;
+    } catch (e) {
+        console.error(`Firebase SET Exception:`, e);
+        return false;
+    }
 }
 
 // ==========================================

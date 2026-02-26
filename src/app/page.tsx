@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import CrescentMoon from "@/components/CrescentMoon";
+import RamadanChandelier from "@/components/RamadanChandelier";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -31,6 +32,10 @@ export default function LandingPage() {
 
   return (
     <div className="gradient-bg min-h-screen flex flex-col items-center justify-center relative overflow-hidden px-4">
+      {/* Decorative Chandeliers */}
+      <RamadanChandelier side="left" />
+      <RamadanChandelier side="right" />
+
       {/* Floating background particles */}
       {Array.from({ length: 20 }).map((_, i) => (
         <motion.div

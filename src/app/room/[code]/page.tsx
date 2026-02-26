@@ -9,6 +9,7 @@ import ParticipantList from "@/components/ParticipantList";
 import CelebrationOverlay from "@/components/CelebrationOverlay";
 import VideoChat from "@/components/VideoChat";
 import DuasWidget from "@/components/DuasWidget";
+import RamadanChandelier from "@/components/RamadanChandelier";
 
 interface RoomData {
     code: string;
@@ -163,6 +164,10 @@ export default function RoomPage() {
                 show={showCelebration}
                 onDismiss={() => setShowCelebration(false)}
             />
+
+            {/* Decorative Chandeliers */}
+            <RamadanChandelier side="left" />
+            <RamadanChandelier side="right" />
 
             {/* Background particles */}
             <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-accent/3 rounded-full blur-3xl" />

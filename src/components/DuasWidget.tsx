@@ -89,17 +89,32 @@ const ROTATION_INTERVAL = 120000; // 2 minutes
 
 export default function DuasWidget() {
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
 
     useEffect(() => {
-        // Start with a random dua
+        // Start with a random dua on mount only
         setCurrentIndex(Math.floor(Math.random() * duas.length));
+    }, []);
+
+    useEffect(() => {
+        if (isPaused) return;
 
         const interval = setInterval(() => {
             setCurrentIndex((prev) => (prev + 1) % duas.length);
         }, ROTATION_INTERVAL);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [isPaused]);
+
+    const handleNext = () => {
+        setIsPaused(true);
+        setCurrentIndex((prev) => (prev + 1) % duas.length);
+    };
+
+    const handlePrev = () => {
+        setIsPaused(true);
+        setCurrentIndex((prev) => (prev - 1 + duas.length) % duas.length);
+    };
 
     const dua = duas[currentIndex];
 
@@ -156,17 +171,60 @@ export default function DuasWidget() {
                 </motion.div>
             </AnimatePresence>
 
-            {/* Progress dots */}
-            <div className="flex items-center justify-center gap-1 mt-4">
-                {duas.map((_, i) => (
-                    <div
-                        key={i}
-                        className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentIndex
+            {/* Progress dots & Manual Controls */}
+            <div className="flex flex-col items-center justify-center gap-3 mt-4">
+                <div className="flex items-center gap-1">
+                    {duas.map((_, i) => (
+                        <div
+                            key={i}
+                            className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentIndex
                                 ? "bg-gold w-3"
                                 : "bg-slate-600"
-                            }`}
-                    />
-                ))}
+                                }`}
+                        />
+                    ))}
+                </div>
+
+                {/* Manual Navigation */}
+                <div className="flex items-center justify-between w-full mt-2 border-t border-purple-accent/10 pt-3">
+                    <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={handlePrev}
+                        className="p-1.5 rounded-lg bg-navy/50 text-slate-400 hover:text-white hover:bg-purple-accent/20 transition-colors"
+                        title="Previous Dua"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </motion.button>
+
+                    {isPaused && (
+                        <motion.button
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            onClick={() => setIsPaused(false)}
+                            className="text-[10px] uppercase tracking-wider text-purple-light/70 hover:text-white transition-colors flex items-center gap-1"
+                        >
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                            </svg>
+                            Resume Auto
+                        </motion.button>
+                    )}
+
+                    <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={handleNext}
+                        className="p-1.5 rounded-lg bg-navy/50 text-slate-400 hover:text-white hover:bg-purple-accent/20 transition-colors"
+                        title="Next Dua"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </motion.button>
+                </div>
             </div>
         </div>
     );
