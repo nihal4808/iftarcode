@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
     try {
         // Metered API Key provided by user
-        const API_KEY = "00467d2f20d374a0c34ecaca8b942fd60454";
+        const API_KEY = process.env.METERED_API_KEY;
         const response = await fetch(`https://iftarcode.metered.live/api/v1/turn/credentials?apiKey=${API_KEY}`);
 
         if (!response.ok) {
